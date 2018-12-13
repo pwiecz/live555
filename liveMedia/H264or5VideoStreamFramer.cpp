@@ -922,6 +922,7 @@ void H264or5VideoStreamParser
       // If "DeltaTfiDivisor" has changed, and we've already computed the frame rate, then
       // adjust it, based on the new value of "DeltaTfiDivisor":
       if (DeltaTfiDivisor != prevDeltaTfiDivisor && fParsedFrameRate != 0.0) {
+	fprintf(stderr, "parsed framerate %d\n", (int)fParsedFrameRate);
 	  usingSource()->fFrameRate = fParsedFrameRate
 	    = fParsedFrameRate*(prevDeltaTfiDivisor/DeltaTfiDivisor);
 #ifdef DEBUG
@@ -939,8 +940,6 @@ void H264or5VideoStreamParser::flushInput() {
 
   StreamParser::flushInput();
 }
-
-#define NUM_NEXT_SLICE_HEADER_BYTES_TO_ANALYZE 12
 
 unsigned H264or5VideoStreamParser::parse() {
   try {
@@ -1157,6 +1156,9 @@ unsigned H264or5VideoStreamParser::parse() {
     fprintf(stderr, "H264or5VideoStreamParser::parse() EXCEPTION (This is normal behavior - *not* an error)\n");
 #endif
     return 0;  // the parsing got interrupted
+  } catch (...) {
+    fprintf(stderr, "Unknown exception\n");
+    return 0;
   }
 }
 
