@@ -17,10 +17,29 @@ CircularBuffer::CircularBuffer(unsigned capacity)
   , fClosed(false)
   , fWasDataRead(false)
   , fCapacity(capacity)
-  , fBuffer(new unsigned char[capacity]){}
+  , fBuffer(new unsigned char[capacity])
+  , fHeaderSize(0)
+  , fStreamHeader(new unsigned char[capacity]) {}
 
 CircularBuffer::~CircularBuffer() {
   delete[] fBuffer;
+}
+
+void CircularBuffer::reset() {
+  fReadPos = 0;
+  fWritePos = fHeaderSize % fCapacity;;
+  fEmpty = fHeaderSize == 0;
+  fClosed = false;
+  fWasDataRead = false;
+  fWriteTimes.clear();
+  fWriteSizes.clear();
+  if (fHeaderSize > 0) {
+    fWriteTimes.push_back(fHeaderWriteTime);
+    fWriteSizes.push_back(fHeaderSize);
+    memcpy(fBuffer, fStreamHeader, fHeaderSize);
+  }
+  fOnFilled.clear();
+  fOnClosed.clear();
 }
 
 unsigned CircularBuffer::readData(unsigned char* data, unsigned maxSize, struct timeval* writeTime) {
@@ -43,7 +62,6 @@ unsigned CircularBuffer::readData(unsigned char* data, unsigned maxSize, struct 
       fWriteTimes.pop_front();
     }
   }
-
   if (fReadPos < fWritePos) {
     memcpy(data, fBuffer + fReadPos, toRead);
   } else {
@@ -71,6 +89,14 @@ void CircularBuffer::writeData(const unsigned char* data, unsigned size) {
   struct timeval writeTime;
   gettimeofday(&writeTime, NULL);
 
+  if (fHeaderSize < fCapacity) {
+    if (fHeaderSize == 0) {
+      fHeaderWriteTime = writeTime;
+    }
+    const unsigned toCopyToHeader = std::min(fCapacity - fHeaderSize, size);
+    memcpy(fStreamHeader + fHeaderSize, data, toCopyToHeader);
+    fHeaderSize += toCopyToHeader;
+  }
   if (!fWasDataRead) {
     // keep the beginning of the stream intact until it's read by some source.
     // Otherwise a client won't recognize it as a correct h264 stream

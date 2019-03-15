@@ -44,12 +44,16 @@ Boolean iFramesOnly = False;
 static const int BUFFER_SIZE = 1 << 19; // 512k bytes
 
 volatile char stop = 0;
+volatile char quit = 0;
 
 static void signal_handler(int signum) {
-  if (stop) {
-    abort();
-  }
+  //  if (stop) {
+  //    abort();
+  //  }
   stop = 1;
+  if (signum != SIGUSR1) {
+    quit = 1;
+  }
 }
 
 static void announceStream(RTSPServer* rtspServer, ServerMediaSession* sms,
@@ -90,69 +94,83 @@ void readDataFromStdin(void* userData, int mask) {
 int main(int argc, char** argv) {
   signal(SIGINT, signal_handler);
   signal(SIGHUP, signal_handler);
-
-  // Begin by setting up our usage environment:
-  TaskScheduler* scheduler = BasicTaskScheduler::createNew();
-  env = BasicUsageEnvironment::createNew(*scheduler);
-
-  // OutPacketBuffer::maxSize = BUFFER_SIZE;
-
-  UserAuthenticationDatabase* authDB = NULL;
-#ifdef ACCESS_CONTROL
-  // To implement client access control to the RTSP server, do the following:
-  authDB = new UserAuthenticationDatabase;
-  authDB->addUserRecord("username1", "password1"); // replace these with real strings
-  // Repeat the above with each <username>, <password> that you wish to allow
-  // access to the server.
-#endif
-
-  // Create the RTSP server:
-  RTSPServer* rtspServer = RTSPServer::createNew(*env, 8554, authDB);
-  if (rtspServer == NULL) {
-    *env << "Failed to create RTSP server: " << env->getResultMsg() << "\n";
-    exit(1);
-  }
+  signal(SIGUSR1, signal_handler);
 
   CircularBuffer* buffer = CircularBuffer::createNew(BUFFER_SIZE);
 
-  env->taskScheduler().turnOnBackgroundReadHandling(0, readDataFromStdin, buffer);
-  char const* descriptionString = "Session streamed by \"testRTSPServer\"";
+  while (quit == 0) {
+    stop = 0;
+    buffer->reset();
 
-  // Set up each of the possible streams that can be served by the
-  // RTSP server.  Each such stream is implemented using a
-  // "ServerMediaSession" object, plus one or more
-  // "ServerMediaSubsession" objects for each audio/video substream.
+    // Begin by setting up our usage environment:
+    TaskScheduler* scheduler = BasicTaskScheduler::createNew();
+    env = BasicUsageEnvironment::createNew(*scheduler);
 
-  // A H.264 video elementary stream:
-  {
-    char const* streamName = "h264";
+    // OutPacketBuffer::maxSize = BUFFER_SIZE;
 
-    ServerMediaSession* sms = ServerMediaSession::createNew(*env, streamName, streamName, descriptionString);
+    UserAuthenticationDatabase* authDB = NULL;
+#ifdef ACCESS_CONTROL
+    // To implement client access control to the RTSP server, do the following:
+    authDB = new UserAuthenticationDatabase;
+    authDB->addUserRecord("username1", "password1"); // replace these with real strings
+    // Repeat the above with each <username>, <password> that you wish to allow
+    // access to the server.
+#endif
 
-    sms->addSubsession( H264VideoStreamServerMediaSubsession::createNew(*env, buffer, reuseFirstSource));
+    RTSPServer* rtspServer = NULL;
+    while (true) {
+      // Create the RTSP server:
+      rtspServer = RTSPServer::createNew(*env, 8554, authDB);
+      if (rtspServer == NULL) {
+	*env << "Failed to create RTSP server: " << env->getResultMsg() << "\n";
+      } else {
+	break;
+      }
+      sleep(1);
+    }
 
-   	rtspServer->addServerMediaSession(sms);
 
-    announceStream(rtspServer, sms, streamName);	// not needed just for better diagnostic
+    env->taskScheduler().turnOnBackgroundReadHandling(0, readDataFromStdin, buffer);
+    char const* descriptionString = "Session streamed from Sinterit printer";
+
+    // Set up each of the possible streams that can be served by the
+    // RTSP server.  Each such stream is implemented using a
+    // "ServerMediaSession" object, plus one or more
+    // "ServerMediaSubsession" objects for each audio/video substream.
+
+    // A H.264 video elementary stream:
+    {
+      char const* streamName = "h264";
+
+      ServerMediaSession* sms = ServerMediaSession::createNew(*env, streamName, streamName, descriptionString);
+
+      sms->addSubsession( H264VideoStreamServerMediaSubsession::createNew(*env, buffer, reuseFirstSource));
+
+      rtspServer->addServerMediaSession(sms);
+
+      announceStream(rtspServer, sms, streamName);	// not needed just for better diagnostic
+    }
+
+    // Also, attempt to create a HTTP server for RTSP-over-HTTP tunneling.
+    // Try first with the default HTTP port (80), and then with the alternative HTTP
+    // port numbers (8000 and 8080).
+
+    /*  if (rtspServer->setUpTunnelingOverHTTP(80) || rtspServer->setUpTunnelingOverHTTP(8000) || rtspServer->setUpTunnelingOverHTTP(8080)) {
+     *env << "\n(We use port " << rtspServer->httpServerPortNum() << " for optional RTSP-over-HTTP tunneling.)\n";
+     } else {
+     *env << "\n(RTSP-over-HTTP tunneling is not available.)\n";
+     }*/
+
+    env->taskScheduler().doEventLoop(&stop); // does not return
+    *env << "Signal received stopping\n";
+    
+    env->taskScheduler().turnOffBackgroundReadHandling(0);
+
+    Medium::close(rtspServer);
+
+    delete scheduler;
+    env->reclaim();
   }
-
-  // Also, attempt to create a HTTP server for RTSP-over-HTTP tunneling.
-  // Try first with the default HTTP port (80), and then with the alternative HTTP
-  // port numbers (8000 and 8080).
-
-  /*  if (rtspServer->setUpTunnelingOverHTTP(80) || rtspServer->setUpTunnelingOverHTTP(8000) || rtspServer->setUpTunnelingOverHTTP(8080)) {
-    *env << "\n(We use port " << rtspServer->httpServerPortNum() << " for optional RTSP-over-HTTP tunneling.)\n";
-  } else {
-    *env << "\n(RTSP-over-HTTP tunneling is not available.)\n";
-    }*/
-
-  env->taskScheduler().doEventLoop(&stop); // does not return
-  *env << "Signal received stopping\n";
-
-  env->taskScheduler().turnOffBackgroundReadHandling(0);
-
-  Medium::close(rtspServer);
-
 
   return 0; // only to prevent compiler warning
 }

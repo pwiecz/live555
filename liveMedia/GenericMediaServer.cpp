@@ -25,6 +25,8 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 #define snprintf _snprintf
 #endif
 
+#define ALLOW_SERVER_PORT_REUSE 1
+
 ////////// GenericMediaServer implementation //////////
 
 void GenericMediaServer::addServerMediaSession(ServerMediaSession* serverMediaSession) {

@@ -12,6 +12,8 @@ class CircularBuffer {
  public:
   static CircularBuffer* createNew(unsigned bufferSize);
 
+  void reset();
+
   void close();
 
   void writeData(const unsigned char* data, unsigned size); 
@@ -47,6 +49,11 @@ protected:
   bool fWasDataRead;
   const unsigned fCapacity;
   unsigned char* const fBuffer;
+  // keep stream prefix across resets, to be able to provide correct stream
+  unsigned fHeaderSize;
+  unsigned char* const fStreamHeader;
+  struct timeval fHeaderWriteTime;
+
   std::deque<struct timeval> fWriteTimes;
   std::deque<unsigned> fWriteSizes;
 
