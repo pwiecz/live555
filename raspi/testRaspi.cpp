@@ -86,6 +86,8 @@ void readDataFromStdin(void* userData, int mask) {
   ssize_t actuallyRead = read(0, readBuf, BUFFER_SIZE);
   if (actuallyRead == 0) {
     buffer->close();
+    quit = 1;
+    stop = 1;
   } else {
     buffer->writeData(readBuf, actuallyRead);
   }
